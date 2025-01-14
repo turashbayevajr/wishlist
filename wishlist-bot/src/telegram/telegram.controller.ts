@@ -52,6 +52,18 @@ async getWishlistByUsername(@Param('username') username: string) {
     throw new HttpException(error.message, HttpStatus.NOT_FOUND);
   }
 }
+@Put('/wishlist/:id/reserve')
+async reserveWishlistItem(
+  @Param('id') id: number,
+  @Body('userId') userId: number
+): Promise<void> {
+  try {
+    await this.telegramService.reserveTheWish(id, String(userId));
+  } catch (error) {
+    throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
+  }
+}
+
 
 
 

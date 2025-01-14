@@ -133,7 +133,7 @@ export class BotService {
   
   if (ctx.session?.step === 'waiting_for_username') {
     const username = ctx.message.text.trim();
-
+  
     // Validate the username format
     if (!isValidUsername(username)) {
       ctx.reply(
@@ -141,27 +141,26 @@ export class BotService {
       );
       return;
     }
-
+  
     try {
       const wishlist = await this.telegramService.getWishlistByUsername(username);
-
+  
       if (!wishlist || wishlist.length === 0) {
-        ctx.reply(`The user "${username}" does not have any wishlist items.`);
-      } else {
-        const items = wishlist
-          .map(
-            (item) =>
-              `*${escapeMarkdownV2(item.name)}*\n` +
-              `Price: ${item.price > 0 ? `${item.price} tenge` : 'Not specified'}\n` +
-              `URL: ${
-                item.url ? `[Link](${escapeMarkdownV2(item.url)})` : 'Not specified'
-              }\n`
-          )
-          .join('\n\n');
-
-        ctx.reply(`Wishlist for "${escapeMarkdownV2(username)}":\n\n${items}`, {
-          parse_mode: 'MarkdownV2',
+        ctx.reply(`The user "${username}" does not have any wishlist items.`, {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(`📲 Menu`, `menu`)],
+          ]).reply_markup,
         });
+      } else {
+        // Map items to inline keyboard buttons
+        const buttons = wishlist.map((item) =>
+          Markup.button.callback(item.name, `view_other_${item.id}`)
+        );
+  
+        ctx.reply(`Wishlist for "${escapeMarkdownV2(username)}":`, {
+          reply_markup: Markup.inlineKeyboard(buttons, { columns: 1 }).reply_markup,
+        });
+        
       }
     } catch (error) {
       console.error('Error fetching wishlist:', error);
@@ -179,10 +178,11 @@ export class BotService {
         });
       }
     }
-
+  
     // Reset the session step
     ctx.session.step = undefined;
   }
+  
   if (step === 'waiting_for_name') {
     item.name = ctx.message.text.trim();
     ctx.session.step = 'waiting_for_price';
@@ -407,6 +407,54 @@ this.bot.action('cancel_delete', async (ctx) => {
   ctx.session.itemToDelete = undefined; // Clear session item
   showMainMenu(ctx); // Show the main menu
 
+});
+
+this.bot.action(/^view_other_(\d+)$/, async (ctx) => {
+  const itemId = parseInt(ctx.match[1], 10); // Extract the item ID from the callback data
+
+  try {
+    const item = await this.telegramService.getWishlistItemDetails(itemId);
+
+    if (!item) {
+      ctx.reply('This item no longer exists.');
+      return;
+    }
+
+    ctx.reply(
+      `*${escapeMarkdownV2(item.name)}*\n` +
+        `Price: ${item.price > 0 ? `${item.price} tenge` : 'Not specified'}\n` +
+        `URL: ${item.url ? `[Link](${escapeMarkdownV2(item.url)})` : 'Not specified'}`,
+      {
+        parse_mode: 'MarkdownV2',
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('Reserve', `reserve_${item.id}`),
+        ]).reply_markup,
+      }
+    );
+    
+  } catch (error) {
+    console.error('Error fetching item details:', error);
+    ctx.reply('Failed to fetch item details. Please try again.');
+  }
+});
+
+this.bot.action(/^reserve_(\d+)$/, async (ctx) => {
+  const wishId = parseInt(ctx.match[1], 10);
+  const userId = ctx.from.id; // Get the Telegram user ID
+
+  try {
+    await this.telegramService.reserveTheWish(wishId, String(userId));
+
+    ctx.reply('You have successfully reserved this wishlist item.', {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(`📲 Menu`, `menu`)],
+      ]).reply_markup,
+    });
+
+  } catch (error) {
+    console.error('Error reserving wishlist item:', error);
+    ctx.reply(`Failed to reserve the wishlist item. Reason: ${error.message}`);
+  }
 });
 
     

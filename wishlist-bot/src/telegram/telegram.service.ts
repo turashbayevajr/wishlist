@@ -110,6 +110,24 @@ export class TelegramService {
     // Fetch and return their wishlist
     return this.getWishlistByUserId(user.id);
   }
+  async reserveTheWish(wishId: number, userId: string): Promise<void> {
+    // Check if the wish exists
+    const wish = await this.prisma.wishlist.findUnique({
+      where: { id: wishId },
+    });
+  
+    if (!wish) {
+      throw new Error(`Wishlist item with ID ${wishId} does not exist.`);
+    }
+  
+    // Update the orderedUserId
+    await this.prisma.wishlist.update({
+      where: { id: wishId },
+      data: {
+        orderedUserId: userId,
+      },
+    });
+  }
   
   
   
