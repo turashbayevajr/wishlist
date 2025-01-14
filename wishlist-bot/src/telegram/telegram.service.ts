@@ -92,7 +92,10 @@ export class TelegramService {
   }
   async getWishlistByUserId(userId: number) {
     return this.prisma.wishlist.findMany({
-      where: { ownerId: userId },
+      where: { 
+        ownerId: userId,
+        orderedUserId: null,
+      },
       select: {
         id: true,
         name: true,
