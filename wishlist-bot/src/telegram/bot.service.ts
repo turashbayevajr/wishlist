@@ -157,7 +157,7 @@ export class BotService {
           Markup.button.callback(item.name, `view_other_${item.id}`)
         );
   
-        ctx.reply(`Wishlist for "${escapeMarkdownV2(username)}":`, {
+        ctx.reply(`Wishlist for "@${username}":`, {
           reply_markup: Markup.inlineKeyboard(buttons, { columns: 1 }).reply_markup,
         });
         
