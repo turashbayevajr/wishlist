@@ -18,6 +18,7 @@ interface BotSession {
   };
   editingField?: 'name' | 'price' | 'url';
   editingItemId?: number;
+  itemToDelete?: number;
 }
 
 type BotContext = Context & { session: BotSession };
@@ -39,31 +40,68 @@ export class BotService {
     this.bot.use(session({ defaultSession: () => ({}) }));
 
     // Register commands and actions
+    function showMainMenu(ctx: any) {
+      ctx.reply(
+        'What would you like to do?',
+        {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('➕ Add Item', 'add')],
+            [Markup.button.callback('📜 View My Wishlist', 'view')],
+            [Markup.button.callback('🔍 View Others', 'view_others')],
+          ]).reply_markup,
+        }
+      );
+    }
+    function escapeMarkdownV2(text: string): string {
+      return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
+    }
+    function isValidUsername(username: string): boolean {
+      const usernameRegex = /^[A-Za-z0-9_]{5,32}$/;
+      return usernameRegex.test(username);
+    }
+    
     
     this.bot.start(async (ctx) => {
       const { id: telegramId, username, first_name: firstName, last_name: lastName } = ctx.from;
+    
       await this.telegramService.registerOrUpdateUser(telegramId.toString(), username, {
         firstName,
         lastName,
       });
+    
       ctx.reply(
-        `Welcome ${firstName || username || 'User'}! Use /add to add items or /view to see your wishlist.`,
+        `Welcome ${firstName || username || 'User'}!`,
       );
-    });
+    
+      showMainMenu(ctx); // Show the main menu
 
-    this.bot.command('add', async (ctx) => {
+    });
+    
+    this.bot.action('menu', async (ctx) => {
+      showMainMenu(ctx); // Show the main menu
+
+    });
+  
+    this.bot.action('add', async (ctx) => {
       ctx.session ??= { step: undefined, item: undefined };
       ctx.session.step = 'waiting_for_name';
       ctx.session.item = { name: '', price: 0, url: '' };
       ctx.reply('Please send the name of the item you want to add:');
     });
 
-    this.bot.command('view', async (ctx) => {
+    this.bot.action('view', async (ctx) => {
       try {
         const telegramId = ctx.from.id.toString();
         const wishes = await this.telegramService.getWishlist(telegramId);
         if (!wishes || wishes.length === 0) {
-          ctx.reply('Your wishlist is empty. Use /add to add items!');
+          ctx.reply(
+            `Your wishlist is empty. Use click to button to add items!'`,
+            {
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('➕ Add Item', 'add')],
+              ]).reply_markup,
+            }
+          );
         } else {
           const buttons = wishes.map((item) =>
             Markup.button.callback(item.name, `view_${item.id}`),
@@ -77,14 +115,74 @@ export class BotService {
         ctx.reply('An error occurred while fetching your wishlist. Please try again.');
       }
     });
+    this.bot.action('view_others', async (ctx) => {
+      ctx.session ??= {}; // Ensure the session exists
+      ctx.session.step = 'waiting_for_username'; // Set the session step to track the state
+    
+      await ctx.answerCbQuery(); // Acknowledge the button click
+      ctx.reply('Please enter the username of the person whose wishlist you want to view:');
+    });
+    
 
     this.bot.on('text', async (ctx) => {
   // Ensure session is initialized
   ctx.session ??= { step: undefined, item: undefined, editingItem: undefined };
 
   const { step, item, editingItem } = ctx.session;
+  
+  
+  if (ctx.session?.step === 'waiting_for_username') {
+    const username = ctx.message.text.trim();
 
-  // Add item flow
+    // Validate the username format
+    if (!isValidUsername(username)) {
+      ctx.reply(
+        'Invalid username format. Accepted characters: A-z (case-insensitive), 0-9, and underscores. Length: 5-32 characters.'
+      );
+      return;
+    }
+
+    try {
+      const wishlist = await this.telegramService.getWishlistByUsername(username);
+
+      if (!wishlist || wishlist.length === 0) {
+        ctx.reply(`The user "${username}" does not have any wishlist items.`);
+      } else {
+        const items = wishlist
+          .map(
+            (item) =>
+              `*${escapeMarkdownV2(item.name)}*\n` +
+              `Price: ${item.price > 0 ? `${item.price} tenge` : 'Not specified'}\n` +
+              `URL: ${
+                item.url ? `[Link](${escapeMarkdownV2(item.url)})` : 'Not specified'
+              }\n`
+          )
+          .join('\n\n');
+
+        ctx.reply(`Wishlist for "${escapeMarkdownV2(username)}":\n\n${items}`, {
+          parse_mode: 'MarkdownV2',
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching wishlist:', error);
+      if (error.message.includes('does not exist')) {
+        ctx.reply(`The user "${username}" does not exist.`, {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(`📲 Menu`, `menu`)],
+          ]).reply_markup,
+        });
+      } else {
+        ctx.reply(`Failed to fetch wishlist for user "${username}". Please try again.`, {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(`📲 Menu`, `menu`)],
+          ]).reply_markup,
+        });
+      }
+    }
+
+    // Reset the session step
+    ctx.session.step = undefined;
+  }
   if (step === 'waiting_for_name') {
     item.name = ctx.message.text.trim();
     ctx.session.step = 'waiting_for_price';
@@ -110,7 +208,11 @@ export class BotService {
   } else if (step === 'waiting_for_url') {
     item.url = ctx.message.text.trim();
     await this.telegramService.addWishlistItem(ctx.from.id.toString(), item);
-    ctx.reply(`Item "${item.name}" has been added to your wishlist.`);
+    ctx.reply(`Item "${item.name}" has been added to your wishlist.`, {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(`📲 Menu`, `menu`)],
+      ]).reply_markup,
+    });
     ctx.session = undefined;
   }
 
@@ -170,7 +272,11 @@ export class BotService {
     this.bot.action('skip_link', async (ctx) => {
       await ctx.answerCbQuery();
       await this.telegramService.addWishlistItem(ctx.from.id.toString(), ctx.session.item);
-      await ctx.editMessageText(`Item "${ctx.session.item.name}" has been added to your wishlist.`);
+      await ctx.reply(`Item "${ctx.session.item.name}" has been added to your wishlist.`, {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(`📲 Menu`, `menu`)],
+        ]).reply_markup,
+      });
       ctx.session = undefined;
     });
 
@@ -192,7 +298,9 @@ export class BotService {
         {
           parse_mode: 'MarkdownV2',
           reply_markup: Markup.inlineKeyboard([
-            Markup.button.callback('Edit', `edit_${itemId}`),
+            [Markup.button.callback('📝Edit', `edit_${itemId}`)],
+           [Markup.button.callback(`❌ Delete`, `delete_${itemId}`)], 
+           [Markup.button.callback(`📲 Menu`, `menu`)],
           ]).reply_markup,
         },
       );
@@ -257,6 +365,51 @@ export class BotService {
         ctx.reply('Failed to save changes. Please try again.');
       }
     });
+
+    this.bot.action(/^delete_(\d+)$/, async (ctx) => {
+      const itemId = parseInt(ctx.match[1], 10);
+    
+      // Save itemId to session for confirmation
+      ctx.session ??= {};
+      ctx.session.itemToDelete = itemId;
+    
+      await ctx.reply('Are you sure you want to delete this item?', {
+        reply_markup: Markup.inlineKeyboard([
+          Markup.button.callback('Yes', `confirm_delete_${itemId}`),
+          Markup.button.callback('No', `cancel_delete`),
+        ]).reply_markup,
+      });
+    });
+    // Confirm delete
+this.bot.action(/^confirm_delete_(\d+)$/, async (ctx) => {
+  const itemId = parseInt(ctx.match[1], 10);
+
+  try {
+    await this.telegramService.deleteWishlistItem(itemId);
+    await ctx.answerCbQuery('Item deleted successfully');
+    ctx.reply('The item has been deleted from your wishlist.');
+    showMainMenu(ctx); // Show the main menu
+
+  } catch (error) {
+    console.error('Error deleting item:', error);
+    ctx.reply('Failed to delete the item. Please try again.');
+  }
+
+  // Clear session item
+  ctx.session.itemToDelete = undefined;
+});
+
+// Cancel delete
+this.bot.action('cancel_delete', async (ctx) => {
+  await ctx.answerCbQuery('Deletion canceled');
+  ctx.reply('Item deletion has been canceled.');
+  
+  ctx.session.itemToDelete = undefined; // Clear session item
+  showMainMenu(ctx); // Show the main menu
+
+});
+
+    
     
     
 

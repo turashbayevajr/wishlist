@@ -65,6 +65,20 @@ export class TelegramService {
       data: updates,
     });
   }
+  async deleteWishlistItem(itemId: number) {
+    const existingItem = await this.prisma.wishlist.findUnique({
+      where: { id: itemId },
+    });
+  
+    if (!existingItem) {
+      throw new Error('Item not found');
+    }
+  
+    return this.prisma.wishlist.delete({
+      where: { id: itemId },
+    });
+  }
+  
   async getUserByUsername(username: string) {
     const user = await this.prisma.user.findFirst({
       where: { username },
@@ -88,6 +102,13 @@ export class TelegramService {
         updatedAt: true,
       },
     });
+  }
+  async getWishlistByUsername(username: string) {
+    // Find user by username
+    const user = await this.getUserByUsername(username);
+  
+    // Fetch and return their wishlist
+    return this.getWishlistByUserId(user.id);
   }
   
   

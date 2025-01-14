@@ -1,4 +1,8 @@
-import { Controller, Get, Post, Put, Body, Query, Param } from '@nestjs/common';
+import { 
+    Controller, 
+    Get, Post, Put, Delete, 
+    Body, Query, Param, 
+    HttpException, HttpStatus } from '@nestjs/common';
 import { TelegramService } from './telegram.service';
 
 @Controller('telegram')
@@ -36,5 +40,19 @@ export class TelegramController {
   async getWishlistByUserId(@Body('userId') userId: number) {
     return this.telegramService.getWishlistByUserId(userId);
   }
+  @Delete('/wishlist/:id')
+  async deleteWishlistItem(@Param('id') id: number) {
+  return this.telegramService.deleteWishlistItem(id);
+}
+@Get('/wishlist/user/:username')
+async getWishlistByUsername(@Param('username') username: string) {
+  try {
+    return await this.telegramService.getWishlistByUsername(username);
+  } catch (error) {
+    throw new HttpException(error.message, HttpStatus.NOT_FOUND);
+  }
+}
+
+
 
 }
