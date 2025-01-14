@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  telegramId String   @unique
+  username      String?
+  firstName      String?
+  lastName       String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  wishes    Wishlist[]
+}
+
+model Wishlist {
+  id            Int      @id @default(autoincrement()) 
+  name          String
+  price         Float
+  url           String
+  ownerId       Int
+  orderedUserId Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Define relationships
+  owner User @relation(fields: [ownerId], references: [id])
+}
